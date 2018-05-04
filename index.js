@@ -1,10 +1,13 @@
 import * as tf from '@tensorflow/tfjs';
+import {plotAccuracies, plotLosses} from './charts';
+
+import {model} from './model';
 
 const NUM_BOUNDING_BOX_VALUES = 4;
 const IMAGE_SIZE = 1024;
 
 const BATCH_SIZE = 100;
-const TRAIN_BATCHES = 2000;
+const TRAIN_BATCHES = 500;
 
 const TEST_ITERATION_FREQUENCY = 5;
 const TEST_BATCH_SIZE = 1000;
@@ -32,34 +35,6 @@ let testLabels = null;
 const imagesContainer = document.querySelector('.images');
 const predictButton = document.querySelector('.predict');
 const trainButton = document.querySelector('.train');
-
-const model = tf.sequential();
-
-model.add(
-  tf.layers.dense({
-    units: 200,
-    inputDim: 1024,
-    activation: 'relu'
-  })
-);
-
-model.add(
-  tf.layers.dense({
-    units: 4,
-    activation: 'relu'
-  })
-);
-
-const learningRate = 0.03;
-const optimizer = tf.train.sgd(learningRate);
-// const optimizer = tf.train.adadelta();
-
-model.compile({
-  optimizer: optimizer,
-  // loss: 'categoricalCrossentropy',
-  loss: 'meanSquaredError',
-  metrics: ['accuracy']
-});
 
 async function createImageData(count) {
   let images = [];
@@ -99,8 +74,6 @@ async function createImageData(count) {
 
       boundingBoxes.push([startX, startY, width, height]);
     }
-
-    // imagesContainer.appendChild(canvas);
   }
 
   return {images, boundingBoxes};
@@ -144,13 +117,24 @@ function nextBatch(batchSize, data, index) {
 }
 
 async function trainShapeRecognition() {
+  console.log(
+    `Creating ${NUM_DATASET_ELEMENTS} train images and bounding boxes...`
+  );
+
   const {images, boundingBoxes} = await createImageData(NUM_DATASET_ELEMENTS);
+
+  console.log('Start training...');
 
   trainImages = images.slice(0, NUM_TRAIN_ELEMENTS);
   testImages = images.slice(NUM_TRAIN_ELEMENTS);
 
   trainLabels = boundingBoxes.slice(0, NUM_TRAIN_ELEMENTS);
   testLabels = boundingBoxes.slice(NUM_TRAIN_ELEMENTS);
+
+  let loss = null;
+  let accuracy = null;
+  const accuracyValues = [];
+  const lossValues = [];
 
   for (let i = 0; i < TRAIN_BATCHES; i++) {
     const trainBatch = nextTrainBatch(BATCH_SIZE);
@@ -162,6 +146,8 @@ async function trainShapeRecognition() {
       testBatch = nextTestBatch(TEST_BATCH_SIZE);
 
       validationData = [testBatch.features, testBatch.labels];
+
+      predictRandomImage();
     }
 
     const history = await model.fit(trainBatch.features, trainBatch.labels, {
@@ -170,10 +156,16 @@ async function trainShapeRecognition() {
       epochs: 1
     });
 
-    const loss = history.history.loss[0];
-    const accuracy = history.history.acc[0];
+    loss = history.history.loss[0];
+    accuracy = history.history.acc[0];
 
-    console.log(`Loss: ${loss}, Accuracy ${accuracy}`, history);
+    lossValues.push({batch: i, loss, set: 'train'});
+    plotLosses(lossValues);
+
+    if (testBatch != null) {
+      accuracyValues.push({batch: i, accuracy, set: 'train'});
+      plotAccuracies(accuracyValues);
+    }
 
     trainBatch.features.dispose();
     trainBatch.labels.dispose();
@@ -235,7 +227,11 @@ function getRandomInt(min, max) {
 
 trainButton.addEventListener('click', trainShapeRecognition);
 
-predictButton.addEventListener('click', async () => {
+predictButton.addEventListener('click', predictRandomImage);
+
+async function predictRandomImage() {
+  console.log(model);
+
   const {images} = await createImageData(1);
 
   const cleanedImageArray = [];
@@ -249,4 +245,4 @@ predictButton.addEventListener('click', async () => {
     .dataSync();
 
   drawImage(images[0], result);
-});
+}
