@@ -2,12 +2,13 @@
     "env": {
         "browser": true,
         "commonjs": true,
-        "es6": true,
         "node": true
     },
     "parserOptions": {
+        "ecmaVersion": 9,
         "ecmaFeatures": {
-            "jsx": true
+            "jsx": true,
+            "experimentalObjectRestSpread": true
         },
         "sourceType": "module"
     },

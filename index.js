@@ -36,7 +36,7 @@ const imagesContainer = document.querySelector('.images');
 const predictButton = document.querySelector('.predict');
 const trainButton = document.querySelector('.train');
 
-async function createImageData(count) {
+function createImageData(count) {
   let images = [];
   let boundingBoxes = [];
 
@@ -121,7 +121,7 @@ async function trainShapeRecognition() {
     `Creating ${NUM_DATASET_ELEMENTS} train images and bounding boxes...`
   );
 
-  const {images, boundingBoxes} = await createImageData(NUM_DATASET_ELEMENTS);
+  const {images, boundingBoxes} = createImageData(NUM_DATASET_ELEMENTS);
 
   console.log('Start training...');
 
@@ -232,7 +232,7 @@ predictButton.addEventListener('click', predictRandomImage);
 async function predictRandomImage() {
   console.log(model);
 
-  const {images} = await createImageData(1);
+  const {images} = createImageData(1);
 
   const cleanedImageArray = [];
   images[0].forEach(pixel => cleanedImageArray.push(pixel));
