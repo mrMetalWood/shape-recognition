@@ -230,8 +230,6 @@ trainButton.addEventListener('click', trainShapeRecognition);
 predictButton.addEventListener('click', predictRandomImage);
 
 async function predictRandomImage() {
-  console.log(model);
-
   const {images} = createImageData(1);
 
   const cleanedImageArray = [];
