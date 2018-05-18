@@ -12,7 +12,7 @@ model.add(
 
 model.add(
   tf.layers.dense({
-    units: 4,
+    units: 8,
     activation: 'relu'
   })
 );

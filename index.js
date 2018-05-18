@@ -3,17 +3,17 @@ import {plotAccuracies, plotLosses} from './charts';
 
 import {model} from './model';
 
-const NUM_BOUNDING_BOX_VALUES = 4;
+const NUM_BOUNDING_BOX_VALUES = 8;
 const IMAGE_SIZE = 1024;
 
 const BATCH_SIZE = 100;
-const TRAIN_BATCHES = 500;
+const TRAIN_BATCHES = 1000;
 
 const TEST_ITERATION_FREQUENCY = 5;
-const TEST_BATCH_SIZE = 1000;
+const TEST_BATCH_SIZE = 500;
 
-const NUM_DATASET_ELEMENTS = 40000;
-const NUM_TRAIN_ELEMENTS = 32000;
+const NUM_DATASET_ELEMENTS = 8000;
+const NUM_TRAIN_ELEMENTS = 6000;
 const NUM_TEST_ELEMENTS = NUM_DATASET_ELEMENTS - NUM_TRAIN_ELEMENTS;
 
 let shuffledTrainIndex = 0;
@@ -24,7 +24,7 @@ let testIndices = tf.util.createShuffledIndices(NUM_TEST_ELEMENTS);
 const imageEdgeLength = 32;
 const minRectangleSize = 4;
 const maxRectangleSize = 16;
-const rectangleCount = 1;
+const rectangleCount = 2;
 
 let trainImages = null;
 let testImages = null;
@@ -46,7 +46,7 @@ function createImageData(count) {
     canvas.height = imageEdgeLength;
 
     var ctx = canvas.getContext('2d');
-
+    const tempBounds = [];
     for (
       let rectangleIndex = 0;
       rectangleIndex < rectangleCount;
@@ -59,21 +59,18 @@ function createImageData(count) {
 
       ctx.fillRect(startX, startY, width, height);
 
-      const imageData = ctx.getImageData(
-        0,
-        0,
-        imageEdgeLength,
-        imageEdgeLength
-      );
-
-      images.push(
-        imageData.data
-          .filter((_, index) => (index + 1) % 4 === 0)
-          .map(pixel => pixel / 255)
-      );
-
-      boundingBoxes.push([startX, startY, width, height]);
+      tempBounds.push(startX, startY, width, height);
     }
+
+    const imageData = ctx.getImageData(0, 0, imageEdgeLength, imageEdgeLength);
+
+    images.push(
+      imageData.data
+        .filter((_, index) => (index + 1) % 4 === 0)
+        .map(pixel => pixel / 255)
+    );
+
+    boundingBoxes.push([tempBounds]);
   }
 
   return {images, boundingBoxes};
@@ -94,6 +91,7 @@ function nextTestBatch(batchSize) {
 }
 
 function nextBatch(batchSize, data, index) {
+  const orginalLabels = [];
   const batchImagesArray = [];
   const batchLabelsArray = [];
 
@@ -104,6 +102,7 @@ function nextBatch(batchSize, data, index) {
     image.forEach(pixel => batchImagesArray.push(pixel));
 
     const label = data[1].slice(idx, idx + 1)[0];
+    orginalLabels.push({labelIndex: idx, loopIndex: i});
     label.forEach(something => batchLabelsArray.push(something));
   }
 
@@ -113,7 +112,7 @@ function nextBatch(batchSize, data, index) {
     NUM_BOUNDING_BOX_VALUES
   ]);
 
-  return {features, labels};
+  return {features, labels, orginalLabels};
 }
 
 async function trainShapeRecognition() {
@@ -162,6 +161,48 @@ async function trainShapeRecognition() {
     lossValues.push({batch: i, loss, set: 'train'});
     plotLosses(lossValues);
 
+    const result = model
+      .predict(trainBatch.features)
+      .flatten()
+      .dataSync();
+
+    tf.tidy(() => {
+      for (let i = 0; i < trainBatch.orginalLabels.length; i++) {
+        const label = trainBatch.orginalLabels[i];
+
+        const orginalLabel = trainLabels[label.labelIndex][0];
+        const orginalLabelFlipped = [
+          ...orginalLabel.slice(4),
+          ...orginalLabel.slice(0, 4)
+        ];
+
+        const predictedLabel = result.slice(
+          label.loopIndex * NUM_BOUNDING_BOX_VALUES,
+          label.loopIndex * NUM_BOUNDING_BOX_VALUES + NUM_BOUNDING_BOX_VALUES
+        );
+
+        const mse = tf
+          .tensor2d(predictedLabel, [1, NUM_BOUNDING_BOX_VALUES])
+          .sub(tf.tensor2d(orginalLabel, [1, NUM_BOUNDING_BOX_VALUES]))
+          .square()
+          .mean()
+          .flatten()
+          .dataSync()[0];
+
+        const mseFlipped = tf
+          .tensor2d(predictedLabel, [1, NUM_BOUNDING_BOX_VALUES])
+          .sub(tf.tensor2d(orginalLabelFlipped, [1, NUM_BOUNDING_BOX_VALUES]))
+          .square()
+          .mean()
+          .flatten()
+          .dataSync()[0];
+
+        if (mseFlipped < mse) {
+          trainLabels[label.labelIndex][0] = orginalLabelFlipped;
+        }
+      }
+    });
+
     if (testBatch != null) {
       accuracyValues.push({batch: i, accuracy, set: 'train'});
       plotAccuracies(accuracyValues);
@@ -184,7 +225,16 @@ export function drawImage(image, boundingBox, xOffset = 0, yOffset = 0) {
   canvas.width = imageEdgeLength;
   canvas.height = imageEdgeLength;
 
-  const [bbStartX, bbStartY, bbWidth, bbHeight] = boundingBox;
+  const [
+    bb1StartX,
+    bb1StartY,
+    bb1Width,
+    bb1Height,
+    bb2StartX,
+    bb2StartY,
+    bb2Width,
+    bb2Height
+  ] = boundingBox;
 
   const ctx = canvas.getContext('2d');
   const imageData = ctx.createImageData(imageEdgeLength, imageEdgeLength);
@@ -206,7 +256,8 @@ export function drawImage(image, boundingBox, xOffset = 0, yOffset = 0) {
 
   if (boundingBox) {
     ctx.strokeStyle = 'deeppink';
-    ctx.rect(bbStartX, bbStartY, bbWidth, bbHeight);
+    ctx.rect(bb1StartX, bb1StartY, bb1Width, bb1Height);
+    ctx.rect(bb2StartX, bb2StartY, bb2Width, bb2Height);
     ctx.stroke();
   }
 
